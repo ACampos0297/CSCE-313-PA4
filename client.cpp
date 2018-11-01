@@ -35,6 +35,21 @@
 #include "Histogram.h"
 using namespace std;
 
+struct UserRequestData
+{
+	string data;
+	int requests;
+	BoundedBuffer* buffer;
+};
+
+struct WorkerData 
+{
+	//should include pointer to histogram and pointer to request channel from main
+	RequestChannel* channel;
+	BoundedBuffer* buff;
+	Histogram* hist;
+};
+
 
 void* request_thread_function(void* arg) {
 	/*
@@ -49,10 +64,14 @@ void* request_thread_function(void* arg) {
 		function MUST be the name of the "patient" for whom
 		the data requests are being pushed: you MAY NOT
 		create 3 copies of this function, one for each "patient".
-	 */
-
-	for(;;) {
-
+	*/
+	
+	UserRequestData *userData = (UserRequestData*) arg;
+	BoundedBuffer *sharedBuffer = (BoundedBuffer*) userData->buffer;
+	//push n requests for this user
+	for(int i=0; i < userData->requests; i++) 
+	{
+		sharedBuffer -> push(userData->data);
 	}
 }
 
@@ -127,17 +146,50 @@ int main(int argc, char * argv[]) {
         cout << "w == " << w << endl;
         cout << "b == " << b << endl;
 
+		BoundedBuffer requestsBuffer(b);
+		
+		cout << "CLIENT STARTED "<<endl;
+		cout << "Establishing Control Channel ... ";
         RequestChannel *chan = new RequestChannel("control", RequestChannel::CLIENT_SIDE);
-        BoundedBuffer request_buffer(b);
-		Histogram hist;
-
-        for(int i = 0; i < n; ++i) {
-            request_buffer.push("data John Smith");
-            request_buffer.push("data Jane Smith");
-            request_buffer.push("data Joe Smith");
-        }
-        cout << "Done populating request buffer" << endl;
-
+		cout << "done." << endl<< flush;	
+        
+		//Create user arguments to pass to thread
+		UserRequestData JohnArgs;
+		JohnArgs.data = "data John Smith";
+		JohnArgs.requests = n;
+		JohnArgs.buffer = &requestsBuffer;
+		
+		UserRequestData JaneArgs;
+		JaneArgs.data = "data Jane Smith";
+		JaneArgs.requests = n;
+		JaneArgs.buffer = &requestsBuffer; 
+		
+		UserRequestData JoeArgs;
+		JoeArgs.data = "data Joe Smith";
+		JoeArgs.requests = n;
+		JoeArgs.buffer = &requestsBuffer;
+		
+		cout << "POPULATING REQUEST BUFFER ... ";
+		pthread_t JohnThread;
+		pthread_t JaneThread;
+		pthread_t JoeThread;
+		
+		//pass structs to threads and call request thread function
+		pthread_create(&JohnThread, NULL, request_thread_function, &JohnArgs);
+		pthread_create(&JaneThread, NULL, request_thread_function, &JaneArgs);
+		pthread_create(&JoeThread, NULL, request_thread_function, &JoeArgs);
+		
+		//join threads 
+		pthread_join(JohnThread, NULL);
+		pthread_join(JaneThread, NULL);
+		pthread_join(JoeThread, NULL);
+		cout << " done. "<<endl;
+		
+		chan->cwrite ("quit");
+        delete chan;
+        cout << "All Done!!!" << endl; 
+        
+/*
         cout << "Pushing quit requests... ";
         for(int i = 0; i < w; ++i) {
             request_buffer.push("quit");
@@ -166,5 +218,6 @@ int main(int argc, char * argv[]) {
         cout << "All Done!!!" << endl; 
 
 		hist.print ();
+		*/
     }
 }
