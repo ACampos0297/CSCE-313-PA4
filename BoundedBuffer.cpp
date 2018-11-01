@@ -1,6 +1,7 @@
 #include "BoundedBuffer.h"
 #include <string>
 #include <queue>
+#include <iostream>
 using namespace std;
 
 BoundedBuffer::BoundedBuffer(int _cap) {
@@ -37,7 +38,7 @@ void BoundedBuffer::push(string str) {
 	*/
 	pthread_mutex_lock(&m);
 	//guard overflow (when size of queue = capacity of buffer)
-	while(q.size()==capacity)
+	while(q.size()==this->capacity)
 	{
 		pthread_cond_wait(&full, &m);
 	}
