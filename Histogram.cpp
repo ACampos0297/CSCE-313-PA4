@@ -6,7 +6,7 @@ using namespace std;
 #include "Histogram.h"
 
 Histogram::Histogram(){
-	pthread_mutex_init(&m);
+	pthread_mutex_init(&m, NULL);
 	for (int i=0; i<3; i++){
 		memset (hist[i], 0, 10 * sizeof (int));	
 	}

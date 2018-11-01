@@ -47,8 +47,18 @@ struct WorkerData
 	//should include pointer to histogram and pointer to request channel from main
 	RequestChannel* channel;
 	BoundedBuffer* buff;
+	BoundedBuffer* buffJohn;
+	BoundedBuffer* buffJane;
+	BoundedBuffer* buffJoe;
 };
 
+struct StatData 
+{
+	//should include pointer to histogram and pointer to request channel from main
+	BoundedBuffer* responseBuffer;
+	string data;
+	Histogram* hist;
+};
 
 void* request_thread_function(void* arg) {
 	/*
@@ -106,6 +116,12 @@ void* worker_thread_function(void* arg) {
 		else
 		{
 			string response = worker -> cread();
+			if(request == "data Joe Smith")
+				threadData->buffJoe -> push(response);
+			if(request == "data Jane Smith")
+				threadData->buffJane -> push(response);
+			if(request == "data John Smith")
+				threadData->buffJohn -> push(response);
 		}
     }
 }
@@ -120,10 +136,22 @@ void* stat_thread_function(void* arg) {
         histogram, does the Histogram class need to be thread-safe????
 
      */
-
-    for(;;) {
-
-    }
+	StatData *threadData = (StatData*) arg;
+	BoundedBuffer* responses = threadData->responseBuffer;
+	
+	while(true)
+	{
+		string response = responses -> pop();
+		if(response == "quit")
+		{
+			break;
+		}
+		else
+		{
+			threadData->hist->update(threadData->data, response);
+		}
+	}
+	
 }
 
 
@@ -134,12 +162,13 @@ void* stat_thread_function(void* arg) {
 int main(int argc, char * argv[]) {
     int n = 100; //default number of requests per "patient"
     int w = 1; //default number of worker threads
-    int b = 3 * n; // default capacity of the request buffer, you should change this default
+	int b = 3 * n;
     int opt = 0;
     while ((opt = getopt(argc, argv, "n:w:b:")) != -1) {
         switch (opt) {
             case 'n':
                 n = atoi(optarg);
+				b = 3*n;
                 break;
             case 'w':
                 w = atoi(optarg); //This won't do a whole lot until you fill in the worker thread function
@@ -149,7 +178,6 @@ int main(int argc, char * argv[]) {
                 break;
 		}
     }
-
     int pid = fork();
 	if (pid == 0){
 		execl("dataserver", (char*) NULL);
@@ -161,7 +189,7 @@ int main(int argc, char * argv[]) {
         cout << "b == " << b << endl;
 
 		BoundedBuffer requestsBuffer(b);
-		
+		Histogram histogram;
 		cout << "CLIENT STARTED "<<endl;
 		cout << "Establishing Control Channel ... ";
         RequestChannel *chan = new RequestChannel("control", RequestChannel::CLIENT_SIDE);
@@ -188,6 +216,12 @@ int main(int argc, char * argv[]) {
 		JoeArgs.requests = n;
 		JoeArgs.buffer = &requestsBuffer;
 		
+		//START TIMER//
+		struct timeval diff, startTV, endTV;
+		gettimeofday(&startTV,NULL);
+		//-----------------------------------//
+		
+		
 		cout << "CREATING REQUEST THREADS";
 		
 		//create threads to populate, work and statistics threads simultaneously
@@ -206,6 +240,10 @@ int main(int argc, char * argv[]) {
 		pthread_t workerThreads[w];
 		WorkerData data[w];
 		
+		BoundedBuffer JohnResponse(b/3);
+		BoundedBuffer JaneResponse(b/3);
+		BoundedBuffer JoeResponse(b/3);
+		
 		for(int i=0; i<w; i++)
 		{	
 			chan->cwrite("newchannel");
@@ -214,15 +252,43 @@ int main(int argc, char * argv[]) {
 			
 			data[i].channel = workerChannel[i];
 			data[i].buff = &requestsBuffer;
+			data[i].buffJohn = &JohnResponse;
+			data[i].buffJane = &JaneResponse;
+			data[i].buffJoe = &JoeResponse;
 			
 			pthread_create(&workerThreads[i], NULL, worker_thread_function, &data[i]);	
 		}
 		cout<<" done. "<<endl;
 		
+		cout<<"CREATING STAT THREADS ";
+		
+		StatData johnData;
+		johnData.responseBuffer = &JohnResponse;
+		johnData.data = "data John Smith";
+		johnData.hist = &histogram;
+		StatData janeData;
+		janeData.responseBuffer = &JaneResponse;
+		janeData.data = "data Jane Smith";
+		janeData.hist = &histogram;
+		StatData joeData;
+		joeData.responseBuffer = &JoeResponse;
+		joeData.data = "data Joe Smith";
+		joeData.hist = &histogram;
+		
+		pthread_t JohnStatThread;
+		pthread_t JaneStatThread;
+		pthread_t JoeStatThread;
+		
+		pthread_create(&JohnStatThread, NULL, stat_thread_function, &johnData);
+		pthread_create(&JaneStatThread, NULL, stat_thread_function, &janeData);
+		pthread_create(&JoeStatThread, NULL, stat_thread_function, &joeData);
+		
+		cout<<" done. "<<endl;
 		
 		pthread_join(JohnThread, NULL);
 		pthread_join(JaneThread, NULL);
 		pthread_join(JoeThread, NULL);
+		
 		for(int i=0; i<w; i++)
 		{
 			requestsBuffer.push("quit");
@@ -230,44 +296,27 @@ int main(int argc, char * argv[]) {
 		for(int i=0; i<w; i++)
 			pthread_join(workerThreads[i], NULL);
 		
+		JohnResponse.push("quit");
+		JaneResponse.push("quit");
+		JoeResponse.push("quit");
 		
+		pthread_join(JohnStatThread, NULL);
+		pthread_join(JaneStatThread, NULL);
+		pthread_join(JoeStatThread, NULL);
 		
+		//-----end timeer -----------//
+		gettimeofday(&endTV,NULL);
 		
-		
+		timersub(&endTV, &startTV, &diff);
+		printf("Time taken = %ld sec %ld micro sec\n", diff.tv_sec, diff.tv_usec);
+		printf("%ld usecs \n", diff.tv_sec * 1000000 + diff.tv_usec);
+		//----------------------------------------//
 		
 		chan->cwrite ("quit");
         delete chan;
         cout << "All Done!!!" << endl; 
-        
-/*
-        cout << "Pushing quit requests... ";
-        for(int i = 0; i < w; ++i) {
-            request_buffer.push("quit");
-        }
-        cout << "done." << endl;
+		
+		histogram.print();
 
-	
-        chan->cwrite("newchannel");
-		string s = chan->cread ();
-        RequestChannel *workerChannel = new RequestChannel(s, RequestChannel::CLIENT_SIDE);
-
-        while(true) {
-            string request = request_buffer.pop();
-			workerChannel->cwrite(request);
-
-			if(request == "quit") {
-			   	delete workerChannel;
-                break;
-            }else{
-				string response = workerChannel->cread();
-				hist.update (request, response);
-			}
-        }
-        chan->cwrite ("quit");
-        delete chan;
-        cout << "All Done!!!" << endl; 
-
-		hist.print ();
-		*/
     }
 }
