@@ -47,7 +47,6 @@ struct WorkerData
 	//should include pointer to histogram and pointer to request channel from main
 	RequestChannel* channel;
 	BoundedBuffer* buff;
-	Histogram* hist;
 };
 
 
@@ -90,9 +89,24 @@ void* worker_thread_function(void* arg) {
 		RequestChannel you construct regardless of
 		whether you used "new" for it.
      */
-
+	WorkerData *threadData = (WorkerData*) arg;
+	RequestChannel* worker = threadData -> channel;
+	BoundedBuffer* buffer = threadData -> buff;
+	 
     while(true) {
-
+		string request = buffer -> pop();
+		worker-> cwrite(request);
+		
+		if(request == "quit")
+		{			
+			worker -> cwrite("quit");
+			delete worker;
+			break;
+		}
+		else
+		{
+			string response = worker -> cread();
+		}
     }
 }
 
@@ -152,6 +166,11 @@ int main(int argc, char * argv[]) {
 		cout << "Establishing Control Channel ... ";
         RequestChannel *chan = new RequestChannel("control", RequestChannel::CLIENT_SIDE);
 		cout << "done." << endl<< flush;	
+		
+		cout << "CREATING WORKER CHANNELS  ... ";
+		//create w request channels
+		RequestChannel* workerChannel[w];
+		cout<<" done."<<endl;
         
 		//Create user arguments to pass to thread
 		UserRequestData JohnArgs;
@@ -169,21 +188,52 @@ int main(int argc, char * argv[]) {
 		JoeArgs.requests = n;
 		JoeArgs.buffer = &requestsBuffer;
 		
-		cout << "POPULATING REQUEST BUFFER ... ";
+		cout << "CREATING REQUEST THREADS";
+		
+		//create threads to populate, work and statistics threads simultaneously
 		pthread_t JohnThread;
 		pthread_t JaneThread;
 		pthread_t JoeThread;
-		
 		//pass structs to threads and call request thread function
 		pthread_create(&JohnThread, NULL, request_thread_function, &JohnArgs);
 		pthread_create(&JaneThread, NULL, request_thread_function, &JaneArgs);
 		pthread_create(&JoeThread, NULL, request_thread_function, &JoeArgs);
 		
-		//join threads 
+		cout<<" done. "<<endl;
+		
+		
+		cout<<"CREATING WORKER THREADS ";
+		pthread_t workerThreads[w];
+		WorkerData data[w];
+		
+		for(int i=0; i<w; i++)
+		{	
+			chan->cwrite("newchannel");
+			string s = chan->cread();
+			workerChannel[i] = new RequestChannel(s, RequestChannel::CLIENT_SIDE);
+			
+			data[i].channel = workerChannel[i];
+			data[i].buff = &requestsBuffer;
+			
+			pthread_create(&workerThreads[i], NULL, worker_thread_function, &data[i]);	
+		}
+		cout<<" done. "<<endl;
+		
+		
 		pthread_join(JohnThread, NULL);
 		pthread_join(JaneThread, NULL);
 		pthread_join(JoeThread, NULL);
-		cout << " done. "<<endl;
+		for(int i=0; i<w; i++)
+		{
+			requestsBuffer.push("quit");
+		}
+		for(int i=0; i<w; i++)
+			pthread_join(workerThreads[i], NULL);
+		
+		
+		
+		
+		
 		
 		chan->cwrite ("quit");
         delete chan;

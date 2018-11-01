@@ -43,7 +43,6 @@ void BoundedBuffer::push(string str) {
 		pthread_cond_wait(&full, &m);
 	}
 	q.push (str);
-	cout<<q.size()<<endl;
 	pthread_cond_signal(&empty);
 	pthread_mutex_unlock(&m);
 }
