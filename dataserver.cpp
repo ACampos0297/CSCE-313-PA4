@@ -66,6 +66,7 @@ void* handle_process_loop (void* _channel) {
 
 
 int main(int argc, char * argv[]) {
+	srand(time(NULL));
 	newchannel_lock = PTHREAD_MUTEX_INITIALIZER;
 	RequestChannel control_channel("control", RequestChannel::SERVER_SIDE);
 	handle_process_loop (&control_channel);	
