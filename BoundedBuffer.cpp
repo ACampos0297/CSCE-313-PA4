@@ -4,7 +4,7 @@
 using namespace std;
 
 BoundedBuffer::BoundedBuffer(int _cap) {
-	this->capacity = cap;
+	this->capacity = _cap;
 	//initialize mutex and conds
 	pthread_cond_init(&full, NULL);
 	pthread_cond_init(&empty, NULL);
