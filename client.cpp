@@ -33,7 +33,11 @@
 #include "reqchannel.h"
 #include "BoundedBuffer.h"
 #include "Histogram.h"
+#include "signal.h"
+
 using namespace std;
+
+Histogram histogram;
 
 struct UserRequestData
 {
@@ -42,7 +46,7 @@ struct UserRequestData
 	BoundedBuffer* buffer;
 };
 
-struct WorkerData 
+struct WorkerData
 {
 	//should include pointer to histogram and pointer to request channel from main
 	RequestChannel* channel;
@@ -52,7 +56,7 @@ struct WorkerData
 	BoundedBuffer* buffJoe;
 };
 
-struct StatData 
+struct StatData
 {
 	//should include pointer to histogram and pointer to request channel from main
 	BoundedBuffer* responseBuffer;
@@ -74,11 +78,11 @@ void* request_thread_function(void* arg) {
 		the data requests are being pushed: you MAY NOT
 		create 3 copies of this function, one for each "patient".
 	*/
-	
+
 	UserRequestData *userData = (UserRequestData*) arg;
 	BoundedBuffer *sharedBuffer = (BoundedBuffer*) userData->buffer;
 	//push n requests for this user
-	for(int i=0; i < userData->requests; i++) 
+	for(int i=0; i < userData->requests; i++)
 	{
 		sharedBuffer -> push(userData->data);
 	}
@@ -86,7 +90,7 @@ void* request_thread_function(void* arg) {
 
 void* worker_thread_function(void* arg) {
     /*
-		Fill in this function. 
+		Fill in this function.
 
 		Make sure it terminates only when, and not before,
 		all the requests have been processed.
@@ -102,13 +106,13 @@ void* worker_thread_function(void* arg) {
 	WorkerData *threadData = (WorkerData*) arg;
 	RequestChannel* worker = threadData -> channel;
 	BoundedBuffer* buffer = threadData -> buff;
-	 
+
     while(true) {
 		string request = buffer -> pop();
 		worker-> cwrite(request);
-		
+
 		if(request == "quit")
-		{			
+		{
 			worker -> cwrite("quit");
 			delete worker;
 			break;
@@ -128,17 +132,17 @@ void* worker_thread_function(void* arg) {
 
 void* stat_thread_function(void* arg) {
     /*
-		Fill in this function. 
+		Fill in this function.
 
-		There should 1 such thread for each person. Each stat thread 
+		There should 1 such thread for each person. Each stat thread
         must consume from the respective statistics buffer and update
-        the histogram. Since a thread only works on its own part of 
+        the histogram. Since a thread only works on its own part of
         histogram, does the Histogram class need to be thread-safe????
 
      */
 	StatData *threadData = (StatData*) arg;
 	BoundedBuffer* responses = threadData->responseBuffer;
-	
+
 	while(true)
 	{
 		string response = responses -> pop();
@@ -151,7 +155,14 @@ void* stat_thread_function(void* arg) {
 			threadData->hist->update(threadData->data, response);
 		}
 	}
-	
+
+}
+
+void histogram_update(int bob)
+{
+	system("clear");
+	histogram.print();
+	alarm(2);
 }
 
 
@@ -189,41 +200,44 @@ int main(int argc, char * argv[]) {
         cout << "b == " << b << endl;
 
 		BoundedBuffer requestsBuffer(b);
-		Histogram histogram;
 		cout << "CLIENT STARTED "<<endl;
 		cout << "Establishing Control Channel ... ";
         RequestChannel *chan = new RequestChannel("control", RequestChannel::CLIENT_SIDE);
-		cout << "done." << endl<< flush;	
-		
+		cout << "done." << endl<< flush;
+
 		cout << "CREATING WORKER CHANNELS  ... ";
+
+
 		//create w request channels
 		RequestChannel* workerChannel[w];
 		cout<<" done."<<endl;
-        
+
 		//Create user arguments to pass to thread
 		UserRequestData JohnArgs;
 		JohnArgs.data = "data John Smith";
 		JohnArgs.requests = n;
 		JohnArgs.buffer = &requestsBuffer;
-		
+
 		UserRequestData JaneArgs;
 		JaneArgs.data = "data Jane Smith";
 		JaneArgs.requests = n;
-		JaneArgs.buffer = &requestsBuffer; 
-		
+		JaneArgs.buffer = &requestsBuffer;
+
 		UserRequestData JoeArgs;
 		JoeArgs.data = "data Joe Smith";
 		JoeArgs.requests = n;
 		JoeArgs.buffer = &requestsBuffer;
-		
+
 		//START TIMER//
 		struct timeval diff, startTV, endTV;
 		gettimeofday(&startTV,NULL);
 		//-----------------------------------//
-		
-		
+
+		signal(SIGALRM, histogram_update);
+		alarm(2);
+
 		cout << "CREATING REQUEST THREADS";
-		
+
 		//create threads to populate, work and statistics threads simultaneously
 		pthread_t JohnThread;
 		pthread_t JaneThread;
@@ -232,36 +246,36 @@ int main(int argc, char * argv[]) {
 		pthread_create(&JohnThread, NULL, request_thread_function, &JohnArgs);
 		pthread_create(&JaneThread, NULL, request_thread_function, &JaneArgs);
 		pthread_create(&JoeThread, NULL, request_thread_function, &JoeArgs);
-		
+
 		cout<<" done. "<<endl;
-		
-		
+
+
 		cout<<"CREATING WORKER THREADS ";
 		pthread_t workerThreads[w];
 		WorkerData data[w];
-		
+
 		BoundedBuffer JohnResponse(b/3);
 		BoundedBuffer JaneResponse(b/3);
 		BoundedBuffer JoeResponse(b/3);
-		
+
 		for(int i=0; i<w; i++)
-		{	
+		{
 			chan->cwrite("newchannel");
 			string s = chan->cread();
 			workerChannel[i] = new RequestChannel(s, RequestChannel::CLIENT_SIDE);
-			
+
 			data[i].channel = workerChannel[i];
 			data[i].buff = &requestsBuffer;
 			data[i].buffJohn = &JohnResponse;
 			data[i].buffJane = &JaneResponse;
 			data[i].buffJoe = &JoeResponse;
-			
-			pthread_create(&workerThreads[i], NULL, worker_thread_function, &data[i]);	
+
+			pthread_create(&workerThreads[i], NULL, worker_thread_function, &data[i]);
 		}
 		cout<<" done. "<<endl;
-		
+
 		cout<<"CREATING STAT THREADS ";
-		
+
 		StatData johnData;
 		johnData.responseBuffer = &JohnResponse;
 		johnData.data = "data John Smith";
@@ -274,48 +288,48 @@ int main(int argc, char * argv[]) {
 		joeData.responseBuffer = &JoeResponse;
 		joeData.data = "data Joe Smith";
 		joeData.hist = &histogram;
-		
+
 		pthread_t JohnStatThread;
 		pthread_t JaneStatThread;
 		pthread_t JoeStatThread;
-		
+
 		pthread_create(&JohnStatThread, NULL, stat_thread_function, &johnData);
 		pthread_create(&JaneStatThread, NULL, stat_thread_function, &janeData);
 		pthread_create(&JoeStatThread, NULL, stat_thread_function, &joeData);
-		
+
 		cout<<" done. "<<endl;
-		
+
 		pthread_join(JohnThread, NULL);
 		pthread_join(JaneThread, NULL);
 		pthread_join(JoeThread, NULL);
-		
+
 		for(int i=0; i<w; i++)
 		{
 			requestsBuffer.push("quit");
 		}
 		for(int i=0; i<w; i++)
 			pthread_join(workerThreads[i], NULL);
-		
+
 		JohnResponse.push("quit");
 		JaneResponse.push("quit");
 		JoeResponse.push("quit");
-		
+
 		pthread_join(JohnStatThread, NULL);
 		pthread_join(JaneStatThread, NULL);
 		pthread_join(JoeStatThread, NULL);
-		
+
 		//-----end timeer -----------//
 		gettimeofday(&endTV,NULL);
-		
+
 		timersub(&endTV, &startTV, &diff);
 		printf("Time taken = %ld sec %ld micro sec\n", diff.tv_sec, diff.tv_usec);
 		printf("%ld usecs \n", diff.tv_sec * 1000000 + diff.tv_usec);
 		//----------------------------------------//
-		
+
 		chan->cwrite ("quit");
         delete chan;
-        cout << "All Done!!!" << endl; 
-		
+        cout << "All Done!!!" << endl;
+
 		histogram.print();
 
     }
