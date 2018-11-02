@@ -254,9 +254,14 @@ int main(int argc, char * argv[]) {
 		pthread_t workerThreads[w];
 		WorkerData data[w];
 
-		BoundedBuffer JohnResponse(b/3);
-		BoundedBuffer JaneResponse(b/3);
-		BoundedBuffer JoeResponse(b/3);
+		if(b<3)
+		{
+			b=3;
+		}
+			BoundedBuffer JohnResponse(b/3);
+			BoundedBuffer JaneResponse(b/3);
+			BoundedBuffer JoeResponse(b/3);
+
 
 		for(int i=0; i<w; i++)
 		{
